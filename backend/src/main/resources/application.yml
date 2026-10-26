@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: chengzhi
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5432/chengzhi
+    username: chengzhi
+    password: chengzhi
+  flyway:
+    enabled: true
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: input
+
+chengzhi:
+  auth:
+    token-ttl: PT8H
+  ingest:
+    chunk-size: 400
+    chunk-overlap: 60
+  qa:
+    top-k: 4
+    model:
+      enabled: ${DEV_MODEL_ENABLED:false}
+      base-url: ${DEV_MODEL_BASE_URL:}
+      api-key: ${DEV_MODEL_API_KEY:}
+      name: ${DEV_MODEL_NAME:}
+      timeout: ${DEV_MODEL_TIMEOUT:PT20S}
+      prompt-version: evidence-v1
+  embedding:
+    enabled: ${DEV_EMBEDDING_ENABLED:false}
+    base-url: ${DEV_EMBEDDING_BASE_URL:${DEV_MODEL_BASE_URL:}}
+    api-key: ${DEV_EMBEDDING_API_KEY:${DEV_MODEL_API_KEY:}}
+    name: ${DEV_EMBEDDING_NAME:text-embedding-3-small}
+    timeout: ${DEV_EMBEDDING_TIMEOUT:PT20S}
+    dimensions: ${DEV_EMBEDDING_DIMENSIONS:1536}
+
+logging:
+  level:
+    dev.chengzhi.qa.model: INFO

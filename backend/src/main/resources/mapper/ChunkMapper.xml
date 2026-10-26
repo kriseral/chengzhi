@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="dev.chengzhi.search.ChunkMapper">
+
+    <select id="searchAccessible" resultType="dev.chengzhi.search.RetrievedChunk">
+        <bind name="terms" value="@dev.chengzhi.search.SearchTerms@toQuery(query)" />
+        with matched as (
+            select
+                c.id as citation_id,
+                d.id as document_id,
+                d.title,
+                d.version as document_version,
+                c.chunk_index,
+                c.content,
+                d.updated_at,
+                (
+                    select count(distinct token)
+                    from unnest(string_to_array(#{terms}, ' | ')) as token
+                    where c.search_vector @@ to_tsquery('simple', token)
+                ) as matched_terms
+            from document_chunks c
+            join documents d
+              on d.id = c.document_id
+             and d.version = c.document_version
+            where c.search_vector @@ to_tsquery('simple', #{terms})
+              and (
+                    d.owner_id = #{scope.userId}
+                    or exists (
+                        select 1
+                        from document_acl acl
+                        where acl.document_id = d.id
+                          and (
+                                (acl.subject_type = 'USER' and acl.subject_id = #{scope.userId})
+                                or (acl.subject_type = 'DEPARTMENT' and acl.subject_id = #{scope.departmentId})
+                                <if test="scope.roles != null and scope.roles.size() &gt; 0">
+                                    or (acl.subject_type = 'ROLE' and acl.subject_id in
+                                        <foreach collection="scope.roles" item="role" open="(" separator="," close=")">
+                                            #{role}
+                                        </foreach>)
+                                </if>
+                              )
+                    )
+                  )
+        )
+        select citation_id, document_id, title, document_version, chunk_index, content
+        from matched
+        where matched_terms &gt;= 2
+        order by matched_terms desc, updated_at desc, chunk_index asc
+        limit #{limit}
+    </select>
+
+
+    <select id="searchAccessibleByVector" resultType="dev.chengzhi.search.RetrievedChunk">
+        select
+            c.id as citation_id,
+            d.id as document_id,
+            d.title,
+            d.version as document_version,
+            c.chunk_index,
+            c.content
+        from document_chunks c
+        join documents d
+          on d.id = c.document_id
+         and d.version = c.document_version
+        where c.embedding is not null
+          and cardinality(c.embedding) = cardinality(#{vector}::real[])
+          and (
+                select sqrt(sum(power(value, 2)))
+                from unnest(c.embedding) as value
+              ) &gt; 0
+          and (
+                select sum(left_value * right_value)
+                from unnest(c.embedding, #{vector}::real[]) as pair(left_value, right_value)
+              ) / (
+                (select sqrt(sum(power(value, 2))) from unnest(c.embedding) as value)
+                * (select sqrt(sum(power(value, 2))) from unnest(#{vector}::real[]) as value)
+              ) &gt;= 0.72
+          and (
+                d.owner_id = #{scope.userId}
+                or exists (
+                    select 1
+                    from document_acl acl
+                    where acl.document_id = d.id
+                      and (
+                            (acl.subject_type = 'USER' and acl.subject_id = #{scope.userId})
+                            or (acl.subject_type = 'DEPARTMENT' and acl.subject_id = #{scope.departmentId})
+                            <if test="scope.roles != null and scope.roles.size() &gt; 0">
+                                or (acl.subject_type = 'ROLE' and acl.subject_id in
+                                    <foreach collection="scope.roles" item="role" open="(" separator="," close=")">
+                                        #{role}
+                                    </foreach>)
+                            </if>
+                          )
+                )
+              )
+        order by (
+                select sum(left_value * right_value)
+                from unnest(c.embedding, #{vector}::real[]) as pair(left_value, right_value)
+              ) / (
+                (select sqrt(sum(power(value, 2))) from unnest(c.embedding) as value)
+                * (select sqrt(sum(power(value, 2))) from unnest(#{vector}::real[]) as value)
+              ) desc,
+              d.updated_at desc,
+              c.chunk_index asc
+        limit #{limit}
+    </select>
+
+</mapper>
+
